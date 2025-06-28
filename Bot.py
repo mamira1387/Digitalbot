@@ -179,7 +179,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 /translate <متن> : متن مورد نظر شما رو به فارسی ترجمه می‌کنه.
 /download <لینک> : لینک ویدیوی مورد نظر شما رو از سایت‌های پشتیبانی شده (یوتیوب، اینستاگرام، تیک‌تاک، پینترست و ...) دانلود می‌کنه.
 /myprofile : آمار چت خودت رو نشون می‌ده.
-/stats : آمار کلی چت گروه و رتبه‌بندی رو نشون می‌ده.
+/stats : آمار کلی چت گروه.
 
 **قابلیت‌های گروه:**
 - **مدیریت لینک:** لینک‌های اینستاگرام، یوتیوب، تیک‌تاک و پینترست رو دانلود می‌کنم. لینک‌های دیگه رو حذف می‌کنم.
@@ -460,6 +460,6 @@ async def admin_actions_on_reply(update: Update, context: ContextTypes.DEFAULT_T
                     logger.error(f"Error banning user after warnings: {e}")
                     await update.message.reply_text("متاسفانه نتوانستم کاربر را بن کنم. (شاید ربات مجوز ندارد یا کاربر ادمین است)")
             else:
-                # این خط اصلاح شده تا خطای SyntaxError برطرف شود
+                # خط اصلاح شده: اطمینان از بسته شدن آکولادها
                 await update.message.reply_text(
-                    f"{target_user.first_nam
+                    f"{target_user.first_name} اخطار گرفت. تعداد اخطارهای 
