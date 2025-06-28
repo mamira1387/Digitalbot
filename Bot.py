@@ -462,4 +462,6 @@ async def admin_actions_on_reply(update: Update, context: ContextTypes.DEFAULT_T
             else:
                 # خط اصلاح شده: اطمینان از بسته شدن آکولادها
                 await update.message.reply_text(
-                    f"{target_user.first_name} اخطار گرفت. تعداد اخطارهای 
+                    f"{target_user.first_name} اخطار گرفت. تعداد اخطارهای فعلی: {current_warnings}/{settings.warning_limit}",
+                    parse_mode='HTML'
+                )
