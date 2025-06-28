@@ -2,27 +2,26 @@ import os
 import re
 import logging
 import translators as ts
-import requests # این ایمپورت اضافه است اگر استفاده نمیشود، حذف شود.
+# import requests # این ایمپورت اگر استفاده نمیشود، حذف شود.
 from telegram import Update, InputMediaPhoto, InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.ext import Updater, CommandHandler, MessageHandler, CallbackContext
-from telegram.ext import filters # تغییر اصلی: ایمپورت filters با حرف کوچک
-from telegram.constants import ChatMemberStatus # برای بررسی وضعیت ادمین
+# ایمپورت های جدید برای سازگاری با نسخه 20 به بالای python-telegram-bot
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackContext, filters
+from telegram.constants import ChatMemberStatus 
 
 # ---------- تنظیمات اولیه ----------
 # توکن باید از متغیر محیطی گرفته شود. نام متغیر محیطی را مثلاً BOT_TOKEN قرار دهید
 TOKEN = os.environ.get("BOT_TOKEN") 
-# توکن را مستقیماً اینجا نگذارید: "7465112074:AAFvmZgNFVWS5cdUEVmuFdgefKHB21SmblE" 
-# اگر TOKEN خالی باشد، ربات کار نخواهد کرد
+# توکن را مستقیماً اینجا نگذارید
 if not TOKEN:
-    logging.error("Telegram BOT_TOKEN environment variable not set.")
-    exit(1)
+    logging.error("Telegram BOT_TOKEN environment variable not set. Please set it in Render environment variables.")
+    exit(1) # اگر توکن نباشد، برنامه باید متوقف شود
 
-ADMINS = set()  # پر می‌شود هنگام اجرای ربات (اینجا موقت است)
+ADMINS = set()  # اینها برای ذخیره‌سازی موقت در RAM هستند. برای ذخیره دائمی نیاز به دیتابیس یا فایل دارید.
 WELCOME_IMAGE = None
 WELCOME_CAPTION = "خوش آمدید به گروه!"
-SPECIAL_USERS = set() # اینها اگر استفاده نمیشوند، حذف شوند.
-SILENT_USERS = set() # اینها اگر استفاده نمیشوند، حذف شوند.
-BANNED_USERS = set() # اینها اگر استفاده نمیشوند، حذف شوند.
+SPECIAL_USERS = set()
+SILENT_USERS = set()
+BANNED_USERS = set()
 MESSAGE_COUNT = {}
 USER_ACTIVITY = {}
 
@@ -38,12 +37,11 @@ async def is_admin(update: Update, context: CallbackContext) -> bool:
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id
     
-    # برای اطمینان از اینکه ربات دسترسی دارد، بهتر است get_chat_member را امتحان کنیم
     try:
         member = await context.bot.get_chat_member(chat_id, user_id)
         return member.status in [ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.CREATOR]
     except Exception as e:
-        logger.error(f"Error checking admin status: {e}")
+        logger.error(f"Error checking admin status for user {user_id} in chat {chat_id}: {e}")
         return False
 
 async def reply_error(update: Update, msg="خطا رخ داد."):
@@ -51,7 +49,7 @@ async def reply_error(update: Update, msg="خطا رخ داد."):
     try:
         await update.message.reply_text(msg)
     except Exception as e:
-        logger.error(f"Failed to reply error message: {e}")
+        logger.error(f"Failed to reply error message to {update.effective_user.id}: {e}")
 
 # ---------- مدیریت بن ----------
 async def handle_ban(update: Update, context: CallbackContext):
@@ -64,17 +62,21 @@ async def handle_ban(update: Update, context: CallbackContext):
         user_id = None
         if update.message.reply_to_message:
             user_id = update.message.reply_to_message.from_user.id
-        elif re.search(r"\d+", text):
-            user_id = int(re.search(r"\d+", text).group())
+        elif len(context.args) > 0: # بررسی آرگومان ها برای آیدی کاربر
+            try:
+                user_id = int(context.args[0])
+            except ValueError:
+                await reply_error(update, "آیدی کاربر معتبر نیست.")
+                return
         
         if user_id:
             BANNED_USERS.add(user_id) # این بن فقط در زمان اجرای ربات موقت است
-            await update.message.reply_text("کاربر بن شد.")
-            logger.info(f"User {user_id} has been banned.")
+            await update.message.reply_text(f"کاربر با آیدی {user_id} بن شد.")
+            logger.info(f"User {user_id} has been banned by {update.effective_user.id}.")
         else:
-            await reply_error(update, "لطفاً روی پیام کاربر ریپلای کنید یا آیدی کاربر را بعد از دستور بن وارد کنید.")
+            await reply_error(update, "لطفاً روی پیام کاربر ریپلای کنید یا آیدی کاربر را بعد از دستور /ban وارد کنید.")
     except Exception as e:
-        logger.error(f"Error in handle_ban: {e}")
+        logger.error(f"Error in handle_ban by {update.effective_user.id}: {e}")
         await reply_error(update, "بن کردن با خطا مواجه شد.")
 
 # ---------- ترجمه ----------
@@ -89,8 +91,9 @@ async def handle_translate(update: Update, context: CallbackContext):
             
         translated = ts.translate_text(original, to_language="fa")
         await update.message.reply_text(f"🔸 ترجمه:\n{translated}")
+        logger.info(f"Message translated for {update.effective_user.id}.")
     except Exception as e:
-        logger.error(f"Error in handle_translate: {e}")
+        logger.error(f"Error in handle_translate by {update.effective_user.id}: {e}")
         await reply_error(update, "در ترجمه خطایی رخ داد. (ممکن است API مترجم در دسترس نباشد)")
 
 # ---------- خوش‌آمدگویی ----------
@@ -99,53 +102,54 @@ async def set_welcome_photo(update: Update, context: CallbackContext):
         await reply_error(update, "شما اجازه این کار را ندارید.")
         return
     
-    # اطمینان از وجود عکس و کپشن
     if update.message.photo and update.message.caption and "عکس خوش آمد گویی" in update.message.caption:
         global WELCOME_IMAGE
         WELCOME_IMAGE = update.message.photo[-1].file_id
         await update.message.reply_text("عکس خوش آمدگویی ذخیره شد.")
-        logger.info(f"Welcome photo set: {WELCOME_IMAGE}")
+        logger.info(f"Welcome photo set by {update.effective_user.id}: {WELCOME_IMAGE}")
     else:
-        await reply_error(update, "لطفاً عکسی را با کپشن 'عکس خوش آمد گویی' ارسال کنید.")
+        await reply_error(update, "لطفاً عکسی را با کپشن 'عکس خوش آمد گویی' ارسال کنید تا ذخیره شود.")
 
 async def welcome_user(update: Update, context: CallbackContext):
     for member in update.message.new_chat_members:
         if member.id in BANNED_USERS:
             try:
                 await context.bot.kick_chat_member(update.effective_chat.id, member.id)
-                logger.info(f"Banned user {member.full_name} ({member.id}) tried to join and was kicked.")
-                continue # به کاربر بن شده خوش‌آمد گفته نمیشود
+                logger.info(f"Banned user {member.full_name} ({member.id}) tried to join and was kicked from chat {update.effective_chat.id}.")
+                continue 
             except Exception as e:
-                logger.error(f"Failed to kick banned user {member.id}: {e}")
+                logger.error(f"Failed to kick banned user {member.id} from chat {update.effective_chat.id}: {e}")
         
         if WELCOME_IMAGE:
             try:
                 await context.bot.send_photo(chat_id=update.effective_chat.id, photo=WELCOME_IMAGE, caption=WELCOME_CAPTION)
-                logger.info(f"Welcome photo sent for {member.full_name}.")
+                logger.info(f"Welcome photo sent for {member.full_name} in chat {update.effective_chat.id}.")
             except Exception as e:
-                logger.error(f"Failed to send welcome photo: {e}")
+                logger.error(f"Failed to send welcome photo for {member.full_name} in chat {update.effective_chat.id}: {e}")
                 await update.message.reply_text(f"{member.full_name} خوش آمدی! (خطا در ارسال عکس خوش‌آمدگویی)")
         else:
             await update.message.reply_text(f"{member.full_name} خوش آمدی!")
-            logger.info(f"Welcome message sent for {member.full_name}.")
+            logger.info(f"Welcome message sent for {member.full_name} in chat {update.effective_chat.id}.")
 
 # ---------- پیام در گوشی ----------
 async def handle_private_note(update: Update, context: CallbackContext):
     if update.message.reply_to_message:
         target_id = update.message.reply_to_message.from_user.id
-        message_text = update.message.text.replace("در گوشی", "").strip() # حذف "در گوشی" از متن
+        # متن دستور را از پیام جدا میکنیم
+        message_text = update.message.text.replace("/note", "", 1).strip() # فقط اولین رخداد /note را حذف کن
+
         if message_text:
             try:
                 await context.bot.send_message(chat_id=target_id, text=f"📩 پیام در گوشی:\n{message_text}")
                 await update.message.reply_text("پیام در گوشی ارسال شد.")
                 logger.info(f"Private note sent from {update.effective_user.id} to {target_id}.")
             except Exception as e:
-                logger.error(f"Failed to send private note: {e}")
-                await reply_error(update, "خطا در ارسال پیام در گوشی.")
+                logger.error(f"Failed to send private note from {update.effective_user.id} to {target_id}: {e}")
+                await reply_error(update, "خطا در ارسال پیام در گوشی. (ممکن است کاربر ربات را بلاک کرده باشد)")
         else:
-            await reply_error(update, "لطفاً متن پیام در گوشی را بعد از 'در گوشی' وارد کنید.")
+            await reply_error(update, "لطفاً متن پیام در گوشی را بعد از دستور /note وارد کنید.")
     else:
-        await reply_error(update, "برای ارسال پیام در گوشی، روی پیام شخص مورد نظر ریپلای کنید.")
+        await reply_error(update, "برای ارسال پیام در گوشی، روی پیام شخص مورد نظر ریپلای کنید و سپس از دستور /note استفاده کنید.")
 
 # ---------- دانلودر (نمایشی) ----------
 async def handle_download(update: Update, context: CallbackContext):
@@ -157,34 +161,38 @@ async def handle_download(update: Update, context: CallbackContext):
         return await reply_error(update, "پیام ریپلای شده حاوی لینک معتبری برای دانلود نیست.")
     
     # این بخش فقط نمایشی است و واقعاً دانلود نمی‌کند.
-    if "دانلود" in update.message.text:
+    if "دانلود" in update.message.text: # این شرط شاید همیشه برقرار نباشد، اگر کاربر فقط /download بزند
         await update.message.reply_text("⬇️ در حال دانلود... (نمایشی)")
         await update.message.reply_text("✅ فایل با موفقیت ارسال شد (نمایشی)")
-        # بهتر است این حذف پیام را در یک بلوک try-except قرار دهید
         try:
             await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=update.message.reply_to_message.message_id)
-            logger.info(f"Message {update.message.reply_to_message.message_id} deleted after mock download.")
+            logger.info(f"Message {update.message.reply_to_message.message_id} deleted after mock download in chat {update.effective_chat.id}.")
         except Exception as e:
-            logger.warning(f"Could not delete message after mock download: {e}")
+            logger.warning(f"Could not delete message {update.message.reply_to_message.message_id} in chat {update.effective_chat.id}: {e}")
+    else:
+        await reply_error(update, "لطفاً بعد از ریپلای روی لینک، دستور /download را بزنید.")
+
 
 # ---------- ضد لینک خالی ----------
 async def anti_empty_link(update: Update, context: CallbackContext):
     if update.message.text and re.fullmatch(r"https?://\S+", update.message.text):
-        if await is_admin(update, context): # ادمین‌ها لینک خالی می‌توانند بگذارند
+        if await is_admin(update, context): # ادمین‌ها می‌توانند لینک خالی بگذارند
             return
         try:
             await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=update.message.message_id)
-            logger.info(f"Empty link message from {update.effective_user.id} deleted.")
+            logger.info(f"Empty link message from user {update.effective_user.id} deleted in chat {update.effective_chat.id}.")
         except Exception as e:
-            logger.warning(f"Could not delete empty link message: {e}")
+            logger.warning(f"Could not delete empty link message from {update.effective_user.id} in chat {update.effective_chat.id}: {e}")
 
 # ---------- آمار ----------
 async def update_stats(update: Update, context: CallbackContext):
     uid = update.effective_user.id
-    chat_id = update.effective_chat.id
+    chat_id = update.effective_chat.id # اگر میخواهید آمار را بر اساس چت هم جدا کنید، باید از chat_id استفاده کنید
     MESSAGE_COUNT[uid] = MESSAGE_COUNT.get(uid, 0) + 1
-    # User activity should track per chat if multiple chats are supported
-    USER_ACTIVITY[uid] = USER_ACTIVITY.get(uid, [])
+    
+    # اطمینان از اینکه لیست فعالیت کاربر همیشه وجود دارد
+    if uid not in USER_ACTIVITY:
+        USER_ACTIVITY[uid] = []
     if update.message.date.hour not in USER_ACTIVITY[uid]:
         USER_ACTIVITY[uid].append(update.message.date.hour)
     logger.info(f"Stats updated for user {uid}. Message count: {MESSAGE_COUNT[uid]}")
@@ -210,49 +218,36 @@ async def handle_profile(update: Update, context: CallbackContext):
         if user_id == uid:
             rank = i + 1
             break
-
+    
     await update.message.reply_text(f"👤 پروفایل شما:\nنام: {name}\nتعداد پیام‌ها: {count}\nساعات فعالیت: {sorted(list(set(hours)))}\nرتبه: {rank}")
     logger.info(f"Profile requested by {uid}.")
 
 # ---------- راه‌اندازی ----------
 def main():
-    # Updater بدون use_context=True در نسخه های جدید
-    updater = Updater(token=TOKEN) 
-    dp = updater.dispatcher
+    # استفاده از ApplicationBuilder به جای Updater مستقیم
+    application = Application.builder().token(TOKEN).build()
 
-    # Handler ها باید به ترتیب دقیق باشند و از filters.TEXT به جای Filters.text استفاده شود.
-    # و از CommandHandler برای دستورات مشخص استفاده شود.
+    # Handlers
+    application.add_handler(CommandHandler("ban", handle_ban)) 
+    application.add_handler(CommandHandler("stats", handle_stats)) 
+    application.add_handler(CommandHandler("profile", handle_profile)) 
+    application.add_handler(CommandHandler("translate", handle_translate)) 
+    application.add_handler(CommandHandler("download", handle_download)) 
+    application.add_handler(CommandHandler("note", handle_private_note)) # نام دستور را به /note تغییر دادم
 
-    # CommandHandler ها برای دستورات /start, /ban, /stats, /profile, /translate, /download, /private_note
-    dp.add_handler(CommandHandler("ban", handle_ban)) # /ban
-    dp.add_handler(CommandHandler("stats", handle_stats)) # /stats
-    dp.add_handler(CommandHandler("profile", handle_profile)) # /profile
-    dp.add_handler(CommandHandler("translate", handle_translate)) # /translate
-    dp.add_handler(CommandHandler("download", handle_download)) # /download
-    dp.add_handler(CommandHandler("note", handle_private_note)) # /note (نام دستور را به /note تغییر دادم)
-
-    # MessageHandler برای خوش‌آمدگویی اعضای جدید
-    dp.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_user))
+    application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_user))
+    application.add_handler(MessageHandler(filters.PHOTO & filters.CAPTION, set_welcome_photo))
     
-    # MessageHandler برای تنظیم عکس خوش‌آمدگویی با کپشن
-    dp.add_handler(MessageHandler(filters.PHOTO & filters.CAPTION, set_welcome_photo))
+    # فیلتر برای پیام‌های متنی که دستور نیستند
+    text_message_filter = filters.TEXT & ~filters.COMMAND
+    application.add_handler(MessageHandler(text_message_filter, update_stats))
+    application.add_handler(MessageHandler(text_message_filter, anti_empty_link))
     
-    # MessageHandler برای به‌روزرسانی آمار پیام‌ها (غیر از دستورات)
-    dp.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, update_stats))
-    
-    # MessageHandler برای حذف لینک‌های خالی (غیر از دستورات)
-    # این باید بعد از update_stats باشد تا پیام قبل از حذف شدن در آمار ثبت شود
-    dp.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, anti_empty_link))
-    
-    # اگر دستورات دیگری دارید که با `in text` بررسی می‌شوند، باید آن‌ها را به CommandHandler تبدیل کنید
-    # یا مطمئن شوید که تداخلی با CommandHandler های بالا ندارند.
-    # توصیه می‌شود از CommandHandler برای همه دستورات استفاده کنید.
-
     logger.info("Bot started polling...")
-    updater.start_polling()
-    updater.idle()
+    # شروع polling با Application
+    application.run_polling(allowed_updates=Update.ALL_TYPES) # Update.ALL_TYPES برای دریافت همه انواع آپدیت ها
     logger.info("Bot stopped.")
 
 if __name__ == '__main__':
     main()
-
+    
