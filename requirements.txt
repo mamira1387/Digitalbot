@@ -1,5 +1,5 @@
-python-telegram-bot
+python-telegram-bot[recommended] # این خط رو تغییر بده
 googletrans==4.0.0-rc1
 yt-dlp
-SQLAlchemy # اگر از پایگاه داده استفاده می‌کنید
-python-dotenv # اگر برای مدیریت متغیرهای محیطی استفاده می‌کنید
+SQLAlchemy
+Pillow # این خط رو اضافه کن
