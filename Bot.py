@@ -399,7 +399,7 @@ async def greet_new_members(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 async def admin_actions_on_reply(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles admin actions triggered by replying to a message."""
     session = Session()
-    try:
+    try: # <--- This try block starts here
         if not update.message.reply_to_message:
             return # Not a reply
 
@@ -460,8 +460,268 @@ async def admin_actions_on_reply(update: Update, context: ContextTypes.DEFAULT_T
                     logger.error(f"Error banning user after warnings: {e}")
                     await update.message.reply_text("متاسفانه نتوانستم کاربر را بن کنم. (شاید ربات مجوز ندارد یا کاربر ادمین است)")
             else:
-                # خط اصلاح شده: اطمینان از بسته شدن آکولادها
                 await update.message.reply_text(
                     f"{target_user.first_name} اخطار گرفت. تعداد اخطارهای فعلی: {current_warnings}/{settings.warning_limit}",
                     parse_mode='HTML'
                 )
+        
+        # Set Warning Limit
+        elif command.startswith("تنظیم اخطار"):
+            try:
+                parts = command.split()
+                if len(parts) < 3: # Check for "تنظیم", "اخطار", and the number
+                    await update.message.reply_text("فرمت صحیح: تنظیم اخطار <عدد>")
+                    return
+                new_limit = int(parts[2])
+                if new_limit > 0:
+                    settings.warning_limit = new_limit
+                    session.commit() # Save to DB
+                    await update.message.reply_text(f"حد اخطار به {new_limit} تنظیم شد.")
+                else:
+                    await update.message.reply_text("عدد اخطار باید مثبت باشد.")
+            except (ValueError, IndexError):
+                await update.message.reply_text("فرمت صحیح: تنظیم اخطار <عدد>")
+        
+        # Mute User
+        elif command.startswith("سکوت"):
+            try:
+                parts = command.split()
+                if len(parts) < 2:
+                    await update.message.reply_text("لطفاً مدت سکوت را به دقیقه وارد کنید. مثال: سکوت 30")
+                    return
+                
+                mute_duration_minutes = int(parts[1])
+                if mute_duration_minutes <= 0:
+                    await update.message.reply_text("مدت سکوت باید مثبت باشد.")
+                    return
+
+                until_date = datetime.now() + timedelta(minutes=mute_duration_minutes)
+                
+                await context.bot.restrict_chat_member(
+                    chat_id=chat_id,
+                    user_id=target_user.id,
+                    permissions=ChatMember.ALL_PERMISSIONS.with_can_send_messages(False),
+                    until_date=until_date
+                )
+                await update.message.reply_text(
+                    f"{target_user.first_name} به مدت {mute_duration_minutes} دقیقه سکوت شد.",
+                    parse_mode='HTML'
+                )
+            except (ValueError, IndexError):
+                await update.message.reply_text("فرمت صحیح: سکوت <عدد به دقیقه>")
+            except Exception as e:
+                logger.error(f"Error muting user: {e}")
+                await update.message.reply_text("متاسفانه نتوانستم کاربر را سکوت کنم. (شاید ربات مجوز ندارد یا کاربر ادمین است)")
+
+        # Set Welcome Message Text (Admin only)
+        elif command == "تنظیم خوشامد متن":
+            if update.message.reply_to_message and update.message.reply_to_message.text:
+                settings.welcome_text = update.message.reply_to_message.text
+                session.commit()
+                await update.message.reply_text("متن خوشامدگویی با موفقیت تنظیم شد.")
+            else:
+                await update.message.reply_text("لطفاً روی پیامی که حاوی متن خوشامدگویی جدید است ریپلای کنید و 'تنظیم خوشامد متن' را بنویسید.")
+
+        # Set Welcome Message Media (Admin only)
+        elif command == "تنظیم خوشامد رسانه":
+            if update.message.reply_to_message:
+                if update.message.reply_to_message.photo:
+                    settings.welcome_media_id = update.message.reply_to_message.photo[-1].file_id # Get largest photo
+                    settings.welcome_media_type = 'photo'
+                    session.commit()
+                    await update.message.reply_text("تصویر خوشامدگویی با موفقیت تنظیم شد.")
+                elif update.message.reply_to_message.video:
+                    settings.welcome_media_id = update.message.reply_to_message.video.file_id
+                    settings.welcome_media_type = 'video'
+                    session.commit()
+                    await update.message.reply_text("ویدیوی خوشامدگویی با موفقیت تنظیم شد.")
+                else:
+                    await update.message.reply_text("لطفاً روی یک تصویر یا ویدیو ریپلای کنید و 'تنظیم خوشامد رسانه' را بنویسید.")
+            else:
+                await update.message.reply_text("لطفاً روی یک تصویر یا ویدیو ریپلای کنید و 'تنظیم خوشامد رسانه' را بنویسید.")
+    except Exception as e: # <--- This except block catches errors from the main try block
+        session.rollback() # Rollback in case of error
+        logger.error(f"Error in admin_actions_on_reply: {e}")
+    finally: # <--- This finally block ensures session is closed
+        session.close()
+
+# --- Group Owner Capabilities ---
+
+async def owner_actions_on_reply(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handles group owner actions triggered by replying to a message."""
+    session = Session()
+    try:
+        if not update.message.reply_to_message:
+            return # Not a reply
+
+        is_owner = await is_group_owner(update, context)
+        bot_owner_id_db = get_bot_owner_id_db(session)
+        
+        # Check if the user is the group creator OR the designated bot owner
+        if not is_owner and update.effective_user.id != bot_owner_id_db:
+            return # Only group owner or bot owner can use these commands
+
+        target_user_id = update.message.reply_to_message.from_user.id
+        target_user = get_or_create_user_db(
+            session,
+            target_user_id,
+            update.message.reply_to_message.from_user.username,
+            update.message.reply_to_message.from_user.first_name,
+            update.message.reply_to_message.from_user.last_name
+        )
+        command = update.message.text.strip()
+
+        # Special User
+        if command == "کاربر ویژه":
+            target_user.is_special = True
+            session.commit()
+            await update.message.reply_text(f"{target_user.first_name} به عنوان کاربر ویژه اضافه شد. او اکنون می‌تواند لینک ارسال کند.", parse_mode='HTML')
+        
+        # Bot Owner (Only group creator can set bot owner initially)
+        elif command == "مالک ربات":
+            if not await is_group_owner(update, context): # Double check only group creator can set this
+                await update.message.reply_text("این دستور فقط توسط سازنده گروه قابل استفاده است.")
+                return
+
+            set_bot_owner_id_db(session, target_user.id)
+            await update.message.reply_text(f"{target_user.first_name} به عنوان مالک ربات تعیین شد. او اکنون قابلیت‌های مالک گروه را دارد.", parse_mode='HTML')
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Error in owner_actions_on_reply: {e}")
+    finally:
+        session.close()
+
+# --- Statistics ---
+
+async def update_user_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Updates user chat statistics."""
+    session = Session()
+    try:
+        user_id = update.effective_user.id
+        user = get_or_create_user_db(
+            session,
+            user_id,
+            update.effective_user.username,
+            update.effective_user.first_name,
+            update.effective_user.last_name
+        )
+        
+        user.total_messages += 1
+
+        now = datetime.now()
+        last_time = user.last_message_time if user.last_message_time else datetime.min
+
+        # Reset daily if new day
+        if now.day != last_time.day or now.month != last_time.month or now.year != last_time.year:
+            user.daily_messages = 0
+        user.daily_messages += 1
+
+        # Reset hourly if new hour
+        if now.hour != last_time.hour or now.day != last_time.day:
+            user.hourly_messages = 0
+        user.hourly_messages += 1
+
+        # Reset weekly
+        # This uses ISO week number, which resets at the start of a new ISO year (usually Monday of the first full week)
+        if now.isocalendar()[1] != last_time.isocalendar()[1] or now.year != last_time.year:
+            user.weekly_messages = 0
+        user.weekly_messages += 1
+
+        # Reset monthly if new month
+        if now.month != last_time.month or now.year != last_time.year:
+            user.monthly_messages = 0
+        user.monthly_messages += 1
+
+        user.last_message_time = now
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Error updating user stats: {e}")
+    finally:
+        session.close()
+
+async def my_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Shows personal chat statistics."""
+    session = Session()
+    try:
+        user_id = update.effective_user.id
+        user = session.query(User).filter_by(id=user_id).first()
+        
+        if not user:
+            await update.message.reply_text("شما هنوز چتی در این گروه نداشته‌اید یا آمار شما ثبت نشده است.")
+            return
+
+        profile_text = f"""
+**پروفایل شما:**
+نام کاربری: {user.first_name} {user.last_name if user.last_name else ''} {f"(@{user.username})" if user.username else ''}
+آیدی عددی: `{user.id}`
+تعداد کل چت‌ها: {user.total_messages}
+تعداد چت امروز: {user.daily_messages}
+تعداد چت این ساعت: {user.hourly_messages}
+تعداد چت این هفته: {user.weekly_messages}
+تعداد چت این ماه: {user.monthly_messages}
+"""
+        await update.message.reply_html(profile_text)
+    finally:
+        session.close()
+
+async def show_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Shows overall group chat statistics and ranking."""
+    session = Session()
+    try:
+        users = session.query(User).order_by(User.total_messages.desc()).limit(10).all()
+        
+        if not users:
+            await update.message.reply_text("هنوز آماری برای نمایش وجود ندارد.")
+            return
+
+        stats_text = "**آمار کلی چت گروه (بر اساس کل پیام‌ها):**\n\n"
+        for i, user in enumerate(users):
+            user_name = user.first_name if user.first_name else "ناشناس"
+            if user.last_name:
+                user_name += f" {user.last_name}"
+            if user.username:
+                user_name += f" (@{user.username})"
+
+            stats_text += f"{i+1}. {user_name}: {user.total_messages} پیام\n"
+        
+        await update.message.reply_html(stats_text)
+    finally:
+        session.close()
+
+# --- Main function to run the bot ---
+
+def main() -> None:
+    """Start the bot."""
+    application = Application.builder().token(TOKEN).build()
+
+    # Command Handlers
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("translate", translate_text))
+    application.add_handler(CommandHandler("download", download_command_handler))
+    application.add_handler(CommandHandler("myprofile", my_profile))
+    application.add_handler(CommandHandler("stats", show_stats))
+
+    # Message Handler for group link management
+    application.add_handler(MessageHandler(filters.TEXT & filters.ChatType.GROUPS & filters.Regex(r'https?://[^\s]+'), manage_group_links))
+
+    # Message Handler for reply translation
+    application.add_handler(MessageHandler(filters.TEXT & filters.REPLY, reply_translate))
+
+    # Message Handler for new members (welcome message)
+    application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, greet_new_members))
+
+    # Message Handler for all text messages to update stats
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, update_user_stats))
+
+    # Message Handler for admin/owner actions (must be after other reply handlers if there are overlaps)
+    application.add_handler(MessageHandler(filters.TEXT & filters.REPLY & filters.ChatType.GROUPS, admin_actions_on_reply))
+    application.add_handler(MessageHandler(filters.TEXT & filters.REPLY & filters.ChatType.GROUPS, owner_actions_on_reply))
+
+
+    # Run the bot until the user presses Ctrl-C
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
+
+if __name__ == "__main__":
+    main()
