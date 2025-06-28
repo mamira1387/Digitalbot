@@ -7,7 +7,7 @@ from telegram.ext import (
     Application, CommandHandler, MessageHandler, filters, ContextTypes,
     ChatMemberHandler
 )
-from py_googletrans import Translator # تغییر از googletrans به py_googletrans
+from py-googletrans import Translator # تغییر از googletrans به py_googletrans
 import yt_dlp
 
 # --- Database Setup ---
