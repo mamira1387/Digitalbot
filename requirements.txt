@@ -1,5 +1,4 @@
 python-telegram-bot~=20.0
-# googletrans==4.0.0-rc1 # این خط رو کامنت یا حذف کن
-py-googletrans # این خط رو اضافه کن
+googletrans
 yt-dlp
 SQLAlchemy
