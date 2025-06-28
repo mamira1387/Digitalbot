@@ -92,7 +92,7 @@ if link:
             pass
         message.reply_text("⚠️ لینک نامعتبر است و حذف شد.")
 
-def main(): updater = Updater("توکن_ربات_اینجا", use_context=True) dp = updater.dispatcher
+def main(): updater = Updater("7465112074:AAFvmZgNFVWS5cdUEVmuFdgefKHB21SmblE", use_context=True) dp = updater.dispatcher
 
 dp.add_handler(CommandHandler("start", lambda u, c: u.message.reply_text("سلام من ربات ArmanLoyalGuy هستم")))
 dp.add_handler(CommandHandler(["بن", "ban"], ban_command))
