@@ -1,4 +1,4 @@
-python-telegram-bot[recommended] # این خط رو تغییر بده
+python-telegram-bot==20.9 # این خط رو تغییر بده
 googletrans==4.0.0-rc1
 yt-dlp
 SQLAlchemy
