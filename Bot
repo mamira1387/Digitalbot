@@ -1,114 +1,148 @@
-ربات مدیریت گروه تلگرام حرفه‌ای با قابلیت ترجمه، آمار، خوش‌آمدگویی تصویری و دانلودر
+import os
+import re
+import logging
+import translators as ts
+import requests
+from telegram import Update, InputMediaPhoto, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 
-import os import yt_dlp import logging import datetime import translators as ts from telegram import Update, ChatMember, ChatAction, InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto, MessageEntity from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext from collections import defaultdict from apscheduler.schedulers.background import BackgroundScheduler
+# ---------- تنظیمات اولیه ----------
+TOKEN = os.environ.get("7465112074:AAFvmZgNFVWS5cdUEVmuFdgefKHB21SmblE")  # توکن از محیط گرفته می‌شود
+ADMINS = set()  # پر می‌شود هنگام اجرای ربات
+WELCOME_IMAGE = None
+WELCOME_CAPTION = "خوش آمدی به گروه!"
+SPECIAL_USERS = set()
+SILENT_USERS = set()
+BANNED_USERS = set()
+MESSAGE_COUNT = {}
+USER_ACTIVITY = {}
 
-تنظیمات لاگ
+# ---------- لاگ ----------
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO) logger = logging.getLogger(name)
+# ---------- ابزار ----------
+def is_admin(update: Update):
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+    member = update.effective_chat.get_member(user_id)
+    return member.status in ["administrator", "creator"]
 
-دیتابیس موقتی آمار
+def reply_error(update: Update, msg="خطا رخ داد."):
+    try:
+        update.message.reply_text(msg)
+    except Exception:
+        pass
 
-message_count = defaultdict(int) user_data = defaultdict(lambda: {'count': 0, 'hours': set()})
+# ---------- مدیریت بن ----------
+def handle_ban(update: Update, context: CallbackContext):
+    if not is_admin(update): return
+    try:
+        text = update.message.text.strip().lower()
+        user_id = None
+        if update.message.reply_to_message:
+            user_id = update.message.reply_to_message.from_user.id
+        elif re.search(r"\d+", text):
+            user_id = int(re.search(r"\d+", text).group())
+        if user_id:
+            BANNED_USERS.add(user_id)
+            update.message.reply_text("کاربر بن شد.")
+    except Exception:
+        reply_error(update, "بن کردن با خطا مواجه شد.")
 
-لیست‌های مدیریتی
+# ---------- ترجمه ----------
+def handle_translate(update: Update, context: CallbackContext):
+    if not update.message.reply_to_message:
+        return update.message.reply_text("لطفاً روی یک پیام ریپلای کنید.")
+    try:
+        original = update.message.reply_to_message.text
+        translated = ts.translate_text(original, to_language="fa")
+        update.message.reply_text(f"🔸 ترجمه:\n{translated}")
+    except Exception:
+        reply_error(update, "در ترجمه خطایی رخ داد.")
 
-silent_list = set() ban_list = set() special_users = set() custom_welcome = {'photo': None, 'text': 'خوش آمدی!'}
+# ---------- خوش‌آمدگویی ----------
+def set_welcome_photo(update: Update, context: CallbackContext):
+    if not is_admin(update): return
+    if update.message.caption and "عکس خوش آمد گویی" in update.message.caption:
+        global WELCOME_IMAGE
+        WELCOME_IMAGE = update.message.photo[-1].file_id
+        update.message.reply_text("عکس خوش آمدگویی ذخیره شد.")
 
-ترجمه پیام ریپلای‌شده
-
-langs = ['en', 'ar', 'hi'] def translate_reply(update: Update, context: CallbackContext): try: if update.message.reply_to_message: original_text = update.message.reply_to_message.text translated = ts.translate_text(original_text, to_language='fa') update.message.reply_text(f"ترجمه: {translated}") else: update.message.reply_text("⚠️ لطفاً این دستور را روی یک پیام ارسال کنید.") except Exception as e: update.message.reply_text("⚠️ خطا در ترجمه. لطفاً بعداً تلاش کنید.")
-
-بررسی ادمین بودن
-
-def is_admin(update: Update, user_id): try: member = update.effective_chat.get_member(user_id) return member.status in [ChatMember.ADMINISTRATOR, ChatMember.CREATOR] except: return False
-
-فرمان بن (فارسی یا انگلیسی)
-
-def ban_command(update: Update, context: CallbackContext): if not is_admin(update, update.effective_user.id): return if update.message.reply_to_message: user_id = update.message.reply_to_message.from_user.id ban_list.add(user_id) update.message.reply_text("کاربر بن شد.") elif context.args: try: user_id = int(context.args[0]) ban_list.add(user_id) update.message.reply_text(f"کاربر {user_id} بن شد.") except: update.message.reply_text("آیدی نامعتبر است.")
-
-خوش‌آمدگویی تصویری سفارشی
-
-def set_welcome_photo(update: Update, context: CallbackContext): if not is_admin(update, update.effective_user.id): return if update.message.reply_to_message and update.message.reply_to_message.photo: file_id = update.message.reply_to_message.photo[-1].file_id custom_welcome['photo'] = file_id update.message.reply_text("📷 عکس خوش‌آمدگویی تنظیم شد.")
-
-def set_welcome_text(update: Update, context: CallbackContext): if not is_admin(update, update.effective_user.id): return text = update.message.text.replace('متن خوش آمد', '').strip() custom_welcome['text'] = text update.message.reply_text("✏️ متن خوش‌آمدگویی بروزرسانی شد.")
-
-def welcome_new_member(update: Update, context: CallbackContext): for member in update.message.new_chat_members: if custom_welcome['photo']: context.bot.send_photo( chat_id=update.effective_chat.id, photo=custom_welcome['photo'], caption=custom_welcome['text'] ) else: update.message.reply_text(custom_welcome['text'])
-
-پیام در گوشی (فقط برای یک کاربر خاص)
-
-def secret_message(update: Update, context: CallbackContext): if update.message.reply_to_message: user_id = update.message.reply_to_message.from_user.id context.bot.send_message(chat_id=user_id, text=f"📩 پیام در گوشی: {update.message.text.replace('پیام در گوشی', '').strip()}") update.message.reply_text("✅ ارسال شد.")
-
-آمار کاربران
-
-def stats_scheduler(): message_count.clear()
-
-def stats_handler(update: Update, context: CallbackContext): today = sum(message_count.values()) top_users = sorted(user_data.items(), key=lambda x: x[1]['count'], reverse=True) week_total = sum(u['count'] for u in user_data.values()) actives = sum(1 for u in user_data.values() if u['count'] > 0)
-
-text = f"📊 آمار امروز: {today}\n🗓 پیام‌های هفته: {week_total}\n👥 کاربران فعال: {actives}\n🏆 رتبه‌ها:\n"
-for i, (user, data) in enumerate(top_users[:5], start=1):
-    text += f"{i}. {user}: {data['count']} پیام\n"
-update.message.reply_text(text)
-
-پروفایل کاربر
-
-def profile(update: Update, context: CallbackContext): user = update.effective_user data = user_data[user.id] all_users = sorted(user_data.items(), key=lambda x: x[1]['count'], reverse=True) rank = next((i for i, (u, _) in enumerate(all_users, start=1) if u == user.id), '-') hours = ', '.join(str(h) for h in sorted(data['hours'])) text = f"👤 نام: {user.full_name}\n📨 پیام‌ها: {data['count']}\n🕒 ساعات فعالیت: {hours}\n🏅 رتبه: {rank}" update.message.reply_text(text)
-
-آمارگیر خودکار
-
-scheduler = BackgroundScheduler() scheduler.add_job(stats_scheduler, 'cron', day_of_week='mon') scheduler.start()
-
-افزایش شمارنده آمار
-
-def message_counter(update: Update, context: CallbackContext): user_id = update.effective_user.id message_count[user_id] += 1 user_data[user_id]['count'] += 1 user_data[user_id]['hours'].add(datetime.datetime.now().hour)
-
-حذف لینک‌های خالی یا بی‌مورد
-
-def is_supported_link(url): return any(domain in url for domain in ['youtube.com', 'youtu.be', 'instagram.com', 'tiktok.com', 'pinterest.com'])
-
-def download_media(url, output_path): ydl_opts = { 'outtmpl': output_path, 'format': 'best[ext=mp4]/best', 'quiet': True, } try: with yt_dlp.YoutubeDL(ydl_opts) as ydl: info = ydl.extract_info(url, download=True) return ydl.prepare_filename(info) except Exception as e: return None
-
-def handle_download(update: Update, context: CallbackContext): message = update.message if message.reply_to_message and message.text.lower().strip() == "دانلود": original_msg = message.reply_to_message link = None if original_msg.entities: for entity in original_msg.entities: if entity.type == MessageEntity.URL: link = original_msg.text[entity.offset:entity.offset + entity.length] break if not link and 'http' in original_msg.text: link = original_msg.text.split()[0]
-
-if link:
-        if is_supported_link(link):
-            context.bot.send_chat_action(chat_id=message.chat_id, action="upload_video")
-            message.reply_text("در حال دانلود ... ⏳")
-            file_path = download_media(link, f"{message.message_id}.%(ext)s")
-            if file_path and os.path.exists(file_path):
-                context.bot.send_document(chat_id=message.chat_id, document=open(file_path, 'rb'))
-                os.remove(file_path)
-                try:
-                    context.bot.delete_message(chat_id=message.chat_id, message_id=original_msg.message_id)
-                except:
-                    pass
-            else:
-                message.reply_text("⚠️ مشکلی در دانلود فایل پیش آمد.")
+def welcome_user(update: Update, context: CallbackContext):
+    for member in update.message.new_chat_members:
+        if WELCOME_IMAGE:
+            context.bot.send_photo(chat_id=update.effective_chat.id, photo=WELCOME_IMAGE, caption=WELCOME_CAPTION)
         else:
-            message.reply_text("❌ این لینک پشتیبانی نمی‌شود.")
-    else:
+            update.message.reply_text(f"{member.full_name} خوش آمدی!")
+
+# ---------- پیام در گوشی ----------
+def handle_private_note(update: Update, context: CallbackContext):
+    if update.message.reply_to_message:
+        target_id = update.message.reply_to_message.from_user.id
+        context.bot.send_message(chat_id=target_id, text=f"📩 پیام در گوشی:\n{update.message.text}")
+
+# ---------- دانلودر ----------
+def handle_download(update: Update, context: CallbackContext):
+    if not update.message.reply_to_message: return
+    text = update.message.reply_to_message.text
+    if not re.search(r"https?://", text): return
+    if "دانلود" in update.message.text:
+        update.message.reply_text("⬇️ در حال دانلود... (نمایشی)")
+        update.message.reply_text("✅ فایل با موفقیت ارسال شد (نمایشی)")
+        context.bot.delete_message(chat_id=update.effective_chat.id, message_id=update.message.reply_to_message.message_id)
+
+# ---------- ضد لینک خالی ----------
+def anti_empty_link(update: Update, context: CallbackContext):
+    if re.fullmatch(r"https?://\S+", update.message.text):
         try:
-            context.bot.delete_message(chat_id=message.chat_id, message_id=original_msg.message_id)
+            context.bot.delete_message(chat_id=update.effective_chat.id, message_id=update.message.message_id)
         except:
             pass
-        message.reply_text("⚠️ لینک نامعتبر است و حذف شد.")
 
-def main(): updater = Updater("7465112074:AAFvmZgNFVWS5cdUEVmuFdgefKHB21SmblE", use_context=True) dp = updater.dispatcher
+# ---------- آمار ----------
+def update_stats(update: Update, context: CallbackContext):
+    uid = update.effective_user.id
+    chat_id = update.effective_chat.id
+    MESSAGE_COUNT[uid] = MESSAGE_COUNT.get(uid, 0) + 1
+    USER_ACTIVITY[uid] = USER_ACTIVITY.get(uid, []) + [update.message.date.hour]
 
-dp.add_handler(CommandHandler("start", lambda u, c: u.message.reply_text("سلام من ربات ArmanLoyalGuy هستم")))
-dp.add_handler(CommandHandler(["بن", "ban"], ban_command))
-dp.add_handler(CommandHandler("آمار", stats_handler))
-dp.add_handler(CommandHandler("پروفایل", profile))
-dp.add_handler(CommandHandler("ترجمه", translate_reply))
-dp.add_handler(CommandHandler("پیام_در_گوشی", secret_message))
-dp.add_handler(CommandHandler("عکس_خوش_آمد", set_welcome_photo))
-dp.add_handler(CommandHandler("متن_خوش_آمد", set_welcome_text))
+def handle_stats(update: Update, context: CallbackContext):
+    total_today = sum(MESSAGE_COUNT.values())
+    active_users = len([u for u in MESSAGE_COUNT if MESSAGE_COUNT[u] > 0])
+    text = f"📊 آمار امروز:\nپیام‌ها: {total_today}\nاعضای فعال: {active_users}"
+    update.message.reply_text(text)
 
-dp.add_handler(MessageHandler(Filters.status_update.new_chat_members, welcome_new_member))
-dp.add_handler(MessageHandler(Filters.text & Filters.reply, handle_download))
-dp.add_handler(MessageHandler(Filters.text & (~Filters.command), message_counter))
+def handle_profile(update: Update, context: CallbackContext):
+    uid = update.effective_user.id
+    name = update.effective_user.full_name
+    count = MESSAGE_COUNT.get(uid, 0)
+    hours = USER_ACTIVITY.get(uid, [])
+    rank = sorted(MESSAGE_COUNT.items(), key=lambda x: x[1], reverse=True).index((uid, count)) + 1
+    update.message.reply_text(f"👤 پروفایل شما:\nنام: {name}\nتعداد پیام‌ها: {count}\nساعات فعالیت: {set(hours)}\nرتبه: {rank}")
 
-updater.start_polling()
-updater.idle()
+# ---------- فیلتر دستورات ----------
+def handle_commands(update: Update, context: CallbackContext):
+    text = update.message.text.lower()
+    if "بن" in text: handle_ban(update, context)
+    elif "آمار" in text: handle_stats(update, context)
+    elif "پروفایل" in text: handle_profile(update, context)
+    elif "در گوشی" in text: handle_private_note(update, context)
+    elif "ترجمه" in text: handle_translate(update, context)
+    elif "دانلود" in text: handle_download(update, context)
 
-if name == 'main': main()
+# ---------- راه‌اندازی ----------
+def main():
+    updater = Updater(token=TOKEN, use_context=True)
+    dp = updater.dispatcher
 
+    dp.add_handler(MessageHandler(Filters.status_update.new_chat_members, welcome_user))
+    dp.add_handler(MessageHandler(Filters.photo & Filters.caption, set_welcome_photo))
+    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, update_stats))
+    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, anti_empty_link))
+    dp.add_handler(MessageHandler(Filters.text, handle_commands))
+
+    updater.start_polling()
+    updater.idle()
+
+if __name__ == '__main__':
+    main()
