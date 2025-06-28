@@ -71,7 +71,6 @@ logger = logging.getLogger(__name__)
 
 # --- Bot Token ---
 # It's highly recommended to load this from an environment variable
-# For local testing, you can put it directly here, but REMOVE IT FOR PRODUCTION!
 TOKEN = os.environ.get("TOKEN", "YOUR_BOT_TOKEN_HERE")
 
 # --- Helper Functions for Database Interaction ---
@@ -264,7 +263,7 @@ async def _perform_download(update: Update, context: ContextTypes.DEFAULT_TYPE, 
 async def download_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles the /download command for private chats or explicit command usage."""
     if not context.args:
-        await update.message.reply_text("لطفاً لینکی برای دانلود بعد از /download وارد کنید. مثال: /download http://youtube.com/watch?v=dQw4w9WgXcQ")
+        await update.message.reply_text("لطفاً لینکی برای دانلود بعد از /download وارد کنید. مثال: /download https://www.youtube.com/watch?v=dQw4w9WgXcQ")
         return
 
     url = context.args[0]
@@ -461,5 +460,6 @@ async def admin_actions_on_reply(update: Update, context: ContextTypes.DEFAULT_T
                     logger.error(f"Error banning user after warnings: {e}")
                     await update.message.reply_text("متاسفانه نتوانستم کاربر را بن کنم. (شاید ربات مجوز ندارد یا کاربر ادمین است)")
             else:
+                # این خط اصلاح شده تا خطای SyntaxError برطرف شود
                 await update.message.reply_text(
-                    f"{target_use
+                    f"{target_user.first_nam
