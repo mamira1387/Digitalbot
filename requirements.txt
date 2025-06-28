@@ -1,5 +1,5 @@
-python-telegram-bot~=20.0 # این خط رو تغییر بده
-googletrans==4.0.0-rc1
+python-telegram-bot~=20.0
+# googletrans==4.0.0-rc1 # این خط رو کامنت یا حذف کن
+py-googletrans # این خط رو اضافه کن
 yt-dlp
 SQLAlchemy
-Pillow # این خط رو اضافه کن
