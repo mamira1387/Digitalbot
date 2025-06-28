@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -18,8 +19,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# توکن ربات (از BotFather بگیرید و اینجا قرار بدید)
-TOKEN = os.getenv("TELEGRAM_TOKEN")  # برای Render، توکن رو در متغیرهای محیطی تنظیم کنید
+# توکن ربات (از BotFather بگیرید و در متغیرهای محیطی Render تنظیم کنید)
+TOKEN = os.getenv("TELEGRAM_TOKEN")
 
 # تنظیم مسیر برای ذخیره فایل‌های دانلود شده
 DOWNLOAD_PATH = "downloads"
@@ -29,37 +30,54 @@ if not os.path.exists(DOWNLOAD_PATH):
 # شیء مترجم
 translator = Translator()
 
+# تابع بررسی لینک رسانه
+def is_media_url(url):
+    media_domains = [
+        "youtube.com", "youtu.be", "instagram.com", "tiktok.com",
+        "twitter.com", "x.com", "facebook.com"
+    ]
+    return any(domain in url.lower() for domain in media_domains)
+
 # تابع شروع ربات
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "سلام! من DigitalBot هستم. می‌تونم متن‌ها رو به فارسی ترجمه کنم و ویدیو از یوتیوب، اینستاگرام و تیک‌تاک دانلود کنم.\n"
+        "سلام! من DigitalBot هستم. می‌تونم متن‌ها رو به فارسی ترجمه کنم و از یوتیوب، اینستاگرام و تیک‌تاک ویدیو دانلود کنم.\n"
         "دستورات:\n"
-        "/translate <متن> - ترجمه متن به فارسی\n"
-        "/download <لینک> - دانلود ویدیو از یوتیوب، اینستا یا تیک‌تاک\n"
-        "/help - راهنما"
+        "/شروع یا /start - شروع ربات\n"
+        "/راهنما یا /help - نمایش راهنما\n"
+        "/ترجمه یا /translate <متن> - ترجمه متن به فارسی\n"
+        "/دانلود یا /download <لینک> - دانلود ویدیو\n"
+        "یا فقط لینک بفرستید تا خودم تشخیص بدم!\n"
+        "برای ترجمه پیام، روی پیام ریپلای کنید و بنویسید 'ترجمه'"
     )
 
 # تابع راهنما
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "دستورات من:\n"
-        "/start - شروع ربات\n"
-        "/translate <متن> - ترجمه متن به فارسی (زبان مبدا خودکار تشخیص داده می‌شه)\n"
-        "/download <لینک> - دانلود ویدیو از یوتیوب، اینستاگرام یا تیک‌تاک\n"
-        "مثال:\n"
-        "/translate Hello, how are you?\n"
-        "/download https://www.youtube.com/watch?v=example"
+        "/شروع یا /start - شروع ربات\n"
+        "/راهنما یا /help - نمایش این راهنما\n"
+        "/ترجمه یا /translate <متن> - ترجمه متن به فارسی\n"
+        "/دانلود یا /download <لینک> - دانلود ویدیو از یوتیوب، اینستا یا تیک‌تاک\n"
+        "یا فقط لینک بفرستید تا خودم بررسی کنم.\n"
+        "برای ترجمه پیام، روی پیام ریپلای کنید و بنویسید 'ترجمه'."
     )
 
 # تابع ترجمه
 async def translate(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("لطفاً متنی برای ترجمه وارد کنید. مثال:\n/translate Hello")
+    if context.args:
+        text = " ".join(context.args)
+    elif update.message.reply_to_message and update.message.text.lower() in ["ترجمه", "/ترجمه", "/translate"]:
+        if update.message.reply_to_message.text:
+            text = update.message.reply_to_message.text
+        else:
+            await update.message.reply_text("پیام ریپلای‌شده متن نداره!")
+            return
+    else:
+        await update.message.reply_text("لطفاً متنی برای ترجمه وارد کنید یا روی پیام ریپلای کنید و بنویسید 'ترجمه'.\nمثال: /ترجمه Hello")
         return
 
-    text = " ".join(context.args)
     try:
-        # ترجمه به فارسی
         translation = translator.translate(text, dest="fa")
         await update.message.reply_text(
             f"متن: {translation.origin}\n"
@@ -68,17 +86,16 @@ async def translate(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     except Exception as e:
         logger.error(f"خطا در ترجمه: {e}")
-        await update.message.reply_text("خطایی در ترجمه رخ داد. لطفاً دوباره امتحان کنید.")
+        await update.message.reply_text("خطایی در ترجمه رخ داد. دوباره امتحان کنید.")
 
 # تابع دانلود
-async def download(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("لطفاً لینک ویدیو رو وارد کنید. مثال:\n/download https://www.youtube.com/watch?v=example")
+async def download(update: Update, context: ContextTypes.DEFAULT_TYPE, url=None):
+    if not url and not context.args:
+        await update.message.reply_text("لطفاً لینک ویدیو رو وارد کنید. مثال:\n/دانلود https://www.youtube.com/watch?v=example")
         return
 
-    url = context.args[0]
+    url = url or context.args[0]
     try:
-        # تنظیمات yt-dlp
         ydl_opts = {
             "outtmpl": f"{DOWNLOAD_PATH}/%(title)s.%(ext)s",
             "format": "best",
@@ -89,15 +106,31 @@ async def download(update: Update, context: ContextTypes.DEFAULT_TYPE):
             info = ydl.extract_info(url, download=True)
             file_path = ydl.prepare_filename(info)
 
-        # ارسال فایل به کاربر
         with open(file_path, "rb") as file:
             await update.message.reply_document(document=file, caption="ویدیو دانلود شد!")
         
-        # حذف فایل بعد از ارسال (برای صرفه‌جویی در فضا)
-        os.remove(file_path)
+        os.remove(file_path)  # حذف فایل بعد از ارسال
     except Exception as e:
         logger.error(f"خطا در دانلود: {e}")
-        await update.message.reply_text("خطایی در دانلود رخ داد. مطمئن بشید لینک معتبره و دوباره امتحان کنید.")
+        await update.message.reply_text("خطایی در دانلود رخ داد. مطمئن بشید لینک معتبره.")
+
+# تابع شناسایی خودکار لینک
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message_text = update.message.text
+    if update.message.reply_to_message and message_text.lower() in ["ترجمه", "/ترجمه", "/translate"]:
+        await translate(update, context)
+        return
+
+    # جستجوی لینک در پیام
+    urls = re.findall(r'(https?://[^\s]+)', message_text)
+    if urls:
+        for url in urls:
+            if is_media_url(url):
+                await download(update, context, url=url)
+            else:
+                await update.message.reply_text("این لینک رسانه‌ای نیست و نمی‌تونم دانلودش کنم.")
+    elif message_text.lower() not in ["ترجمه", "/ترجمه", "/translate"]:
+        await update.message.reply_text("لطفاً لینک رسانه یا دستور معتبر بفرستید. برای راهنما: /راهنما")
 
 # تابع مدیریت خطاها
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -105,16 +138,16 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update and update.message:
         await update.message.reply_text("یه مشکلی پیش اومد! لطفاً دوباره امتحان کنید.")
 
-# تابع اصلی برای اجرا
+# تابع اصلی
 def main():
-    # ایجاد اپلیکیشن ربات
     application = Application.builder().token(TOKEN).build()
 
     # ثبت دستورات
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("translate", translate))
-    application.add_handler(CommandHandler("download", download))
+    application.add_handler(CommandHandler(["start", "شروع"], start))
+    application.add_handler(CommandHandler(["help", "راهنما"], help_command))
+    application.add_handler(CommandHandler(["translate", "ترجمه"], translate))
+    application.add_handler(CommandHandler(["download", "دانلود"], download))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     # مدیریت خطاها
     application.add_error_handler(error_handler)
