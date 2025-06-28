@@ -1,4 +1,5 @@
 python-telegram-bot
-requests
+googletrans==4.0.0-rc1
 yt-dlp
-googletrans
+SQLAlchemy # اگر از پایگاه داده استفاده می‌کنید
+python-dotenv # اگر برای مدیریت متغیرهای محیطی استفاده می‌کنید
