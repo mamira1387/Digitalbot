@@ -693,6 +693,7 @@ async def show_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 def main() -> None:
     """Start the bot."""
+    # ساخت Application
     application = Application.builder().token(TOKEN).build()
 
     # Command Handlers
@@ -720,7 +721,7 @@ def main() -> None:
     application.add_handler(MessageHandler(filters.TEXT & filters.REPLY & filters.ChatType.GROUPS, owner_actions_on_reply))
 
 
-    # Run the bot until the user presses Ctrl-C
+    # این خط مستقیماً بر روی application متد run_polling را اجرا می‌کند
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
