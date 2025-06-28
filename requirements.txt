@@ -1,7 +1,4 @@
-python-telegram-bot
-apscheduler==3.10.1
+python-telegram-bot==20.7
 requests
-translators
-pytube
-youtube_dl
-instaloader
+yt-dlp
+googletrans==4.0.0-rc1
