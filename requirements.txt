@@ -2,3 +2,4 @@ python-telegram-bot
 googletrans
 yt-dlp
 SQLAlchemy
+flask
