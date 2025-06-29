@@ -123,8 +123,7 @@ def set_bot_owner_id_db(session, user_id):
 async def is_admin_or_creator(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     """Checks if the user is an administrator or creator in the chat."""
     if update.effective_chat.type not in ["group", "supergroup"]:
-        await update.message.reply_text("این دستور فقط در گروه‌ها قابل استفاده است.")
-        return False
+        return False # No need to reply for private chat non-admin checks
     
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id
@@ -134,17 +133,18 @@ async def is_admin_or_creator(update: Update, context: ContextTypes.DEFAULT_TYPE
         if chat_member.status in ["creator", "administrator"]:
             return True
         else:
-            await update.message.reply_text("این دستور فقط برای ادمین‌ها و سازنده گروه قابل استفاده است.")
+            if update.message: 
+                await update.message.reply_text("این دستور فقط برای ادمین‌ها و سازنده گروه قابل استفاده است.")
             return False
     except Exception as e:
         logger.error(f"Error checking admin status: {e}")
-        await update.message.reply_text("خطایی در بررسی وضعیت ادمین رخ داد.")
+        if update.message:
+            await update.message.reply_text("خطایی در بررسی وضعیت ادمین رخ داد.")
         return False
 
 async def is_group_owner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     """Checks if the user is the creator of the group."""
     if update.effective_chat.type not in ["group", "supergroup"]:
-        await update.message.reply_text("این دستور فقط در گروه‌ها قابل استفاده است.")
         return False
     
     user_id = update.effective_user.id
@@ -155,11 +155,13 @@ async def is_group_owner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if chat_member.status == "creator":
             return True
         else:
-            await update.message.reply_text("این دستور فقط برای سازنده گروه قابل استفاده است.")
+            if update.message:
+                await update.message.reply_text("این دستور فقط برای سازنده گروه قابل استفاده است.")
             return False
     except Exception as e:
         logger.error(f"Error checking group owner status: {e}")
-        await update.message.reply_text("خطایی در بررسی وضعیت سازنده گروه رخ داد.")
+        if update.message:
+            await update.message.reply_text("خطایی در بررسی وضعیت سازنده گروه رخ داد.")
         return False
 
 # --- Command Handlers ---
@@ -168,7 +170,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send a message when the command /start is issued."""
     user = update.effective_user
     await update.message.reply_html(
-        rf'''سلام {user.mention_html()}! من DigitalBot هستم. برای استفاده از قابلیت‌های من، می‌تونی از دستورات زیر استفاده کنی:
+        rf'''سلام {user.mention_html()}! من DigitalBot هستم و **فعال** هستم. برای استفاده از قابلیت‌های من، می‌تونی از دستورات زیر استفاده کنی:
 /help - راهنمای کامل
 /translate <متن> - ترجمه متن به فارسی
 /download <لینک> - دانلود محتوا از لینک
@@ -184,7 +186,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 راهنمای استفاده از DigitalBot (سازنده: armanloyalguy):
 
 **دستورات عمومی:**
-/start : شروع کار با ربات و معرفی.
+/start : شروع کار با ربات و معرفی (نشون می‌ده که ربات فعاله).
 /help : نمایش این راهنما.
 /translate <متن> : متن مورد نظر شما رو به فارسی ترجمه می‌کنه.
 /download <لینک> : لینک ویدیوی مورد نظر شما رو از سایت‌های پشتیبانی شده (یوتیوب، اینستاگرام، تیک‌تاک، پینترست و ...) دانلود می‌کنه.
@@ -199,9 +201,11 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 **قابلیت‌های ادمین (فقط برای ادمین‌ها و سازنده گروه):**
 - **پین کردن پیام:** روی پیامی ریپلای کن و بنویس 'پین'.
 - **بن کردن کاربر:** روی پیامی از کاربر ریپلای کن و بنویس 'بن'.
+- **رفع بن کردن کاربر:** روی پیامی حاوی آیدی عددی کاربر ریپلای کن و بنویس 'رفع بن'.
 - **اخطار دادن:** روی پیامی از کاربر ریپلای کن و بنویس 'اخطار'. (پیش‌فرض 5 اخطار تا بن)
 - **تنظیم حد اخطار:** روی پیامی ریپلای کن و بنویس 'تنظیم اخطار <عدد>'.
 - **سکوت کاربر:** روی پیامی از کاربر ریپلای کن و بنویس 'سکوت <عدد به دقیقه>'.
+- **ادمین کردن کاربر:** روی پیامی از کاربر ریپلای کن و بنویس 'ادمین'.
 - **تنظیم پیام خوشامدگویی:**
     - برای تنظیم متن: روی پیامی ریپلای کن و بنویس 'تنظیم خوشامد متن'.
     - برای تنظیم تصویر/ویدیو: روی تصویر/ویدیوی مورد نظر ریپلای کن و بنویس 'تنظیم خوشامد رسانه'.
@@ -225,8 +229,7 @@ async def translate_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     except Exception as e:
         logger.error(f"Translation error: {e}")
         await update.message.reply_text("متاسفانه در حال حاضر امکان ترجمه وجود نداره. لطفاً بعداً امتحان کنید.")
-
-# --- Download Handler & Link Management ---
+        # --- Download Handler & Link Management ---
 
 async def _perform_download(update: Update, context: ContextTypes.DEFAULT_TYPE, url: str) -> None:
     """Helper function to perform the actual download using yt-dlp."""
@@ -259,6 +262,8 @@ async def _perform_download(update: Update, context: ContextTypes.DEFAULT_TYPE, 
 
         os.makedirs('downloads', exist_ok=True) # Ensure 'downloads' directory exists
 
+        await update.message.reply_text("در حال پردازش و دانلود لینک شما، لطفاً منتظر بمانید...")
+
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
@@ -274,7 +279,7 @@ async def _perform_download(update: Update, context: ContextTypes.DEFAULT_TYPE, 
                 await update.message.reply_document(document=open(filename, 'rb'), caption="فایل شما آماده است!")
             
             os.remove(filename)  # Delete file after sending
-            if not os.listdir('downloads'): # Remove directory if empty
+            if os.path.exists('downloads') and not os.listdir('downloads'): # Check if dir is empty before removing
                 os.rmdir('downloads')
         else:
             await update.message.reply_text("متاسفانه در دانلود محتوا مشکلی پیش آمد.")
@@ -297,7 +302,6 @@ async def download_command_handler(update: Update, context: ContextTypes.DEFAULT
         return
 
     url = context.args[0]
-    await update.message.reply_text("در حال پردازش و دانلود لینک شما، لطفاً منتظر بمانید...")
     await _perform_download(update, context, url)
 
 async def manage_group_links(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -341,26 +345,51 @@ async def manage_group_links(update: Update, context: ContextTypes.DEFAULT_TYPE)
             is_allowed_link = True # Special users can send any link
 
         if is_allowed_link:
-            await update.message.reply_text("لینک مجاز تشخیص داده شد. در حال پردازش و دانلود محتوا...")
             await _perform_download(update, context, urls[0])
         else:
             # If the link is not allowed, delete the message
             try:
+                # Get chat settings to know the warning limit
+                chat_id = update.effective_chat.id
+                settings = get_chat_settings_db(session, chat_id)
+
                 await update.message.delete()
-                await context.bot.send_message(
-                    chat_id=update.effective_chat.id,
-                    text=f"پیام حاوی لینک غیرمجاز توسط {update.effective_user.mention_html()} حذف شد.",
-                    parse_mode='HTML'
-                )
+                # Apply warning to user
+                user.warnings += 1
+                session.commit() # Save changes to DB
+
+                current_warnings = user.warnings
+                if current_warnings >= settings.warning_limit:
+                    try:
+                        await context.bot.ban_chat_member(chat_id=chat_id, user_id=user.id)
+                        await context.bot.send_message(
+                            chat_id=chat_id,
+                            text=f"{user.first_name} به دلیل ارسال لینک غیرمجاز و رسیدن به {settings.warning_limit} اخطار از گروه بن شد.",
+                            parse_mode='HTML'
+                        )
+                        user.warnings = 0 # Reset warnings after ban
+                        session.commit()
+                    except Exception as e:
+                        logger.error(f"Error banning user after warnings for link: {e}")
+                        await context.bot.send_message(
+                            chat_id=chat_id,
+                            text="ربات نتوانست کاربر را بن کند. (شاید ربات مجوز ندارد یا کاربر ادمین است)"
+                        )
+                else:
+                    await context.bot.send_message(
+                        chat_id=chat_id,
+                        text=f"پیام حاوی لینک غیرمجاز توسط {update.effective_user.mention_html()} حذف شد. {user.first_name} اخطار گرفت. تعداد اخطارهای فعلی: {current_warnings}/{settings.warning_limit}",
+                        parse_mode='HTML'
+                    )
             except Exception as e:
-                logger.error(f"Error deleting message: {e}")
+                logger.error(f"Error deleting message or sending warning: {e}")
                 await context.bot.send_message(
                     chat_id=update.effective_chat.id,
-                    text="ربات نتوانست پیام حاوی لینک غیرمجاز را حذف کند. لطفاً مطمئن شوید ربات مجوزهای لازم را دارد."
+                    text="ربات نتوانست پیام حاوی لینک غیرمجاز را حذف کند یا اخطار بدهد. لطفاً مطمئن شوید ربات مجوزهای لازم را دارد."
                 )
     except Exception as e:
         session.rollback()
-        logger.error(f"Error in manage_group_links: {e}")
+        logger.error(f"Error in manage_group_links (outer try): {e}")
     finally:
         session.close()
 
@@ -369,6 +398,7 @@ async def manage_group_links(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def reply_translate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Translates the replied message to Farsi if the reply text is 'ترجمه'."""
+    # Ensure update.message.text is not None and matches "ترجمه" exactly after stripping whitespace
     if update.message.reply_to_message and update.message.text and update.message.text.strip() == "ترجمه":
         original_message_text = update.message.reply_to_message.text
         if not original_message_text:
@@ -423,28 +453,47 @@ async def greet_new_members(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                 )
     finally:
         session.close()
-# --- Admin Capabilities ---
+        # --- Admin Capabilities ---
 
 async def admin_actions_on_reply(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles admin actions triggered by replying to a message."""
     session = Session()
     try:
-        if not update.message.reply_to_message:
-            return # Not a reply
+        if not update.message.reply_to_message or not update.message.text:
+            return # Not a reply or no text in the message
 
+        # Check admin status first
         if not await is_admin_or_creator(update, context):
-            return # Only admins can use these commands
+            return # Only admins can use these commands (is_admin_or_creator sends a message)
 
         target_user_id = update.message.reply_to_message.from_user.id
-        target_user = get_or_create_user_db(
+        # If the replied message is just a user ID, use that for target_user_id
+        if update.message.reply_to_message.text and update.message.text.strip() == "رفع بن":
+            try:
+                target_user_id = int(update.message.reply_to_message.text.strip())
+            except ValueError:
+                await update.message.reply_text("برای رفع بن، لطفاً روی پیامی که حاوی آیدی عددی کاربر است ریپلای کنید.")
+                return
+        
+        target_user_info = await context.bot.get_chat_member(chat_id=update.effective_chat.id, user_id=target_user_id)
+        # We need the user's name even if they are not in our DB yet.
+        target_user_name = target_user_info.user.first_name if target_user_info.user.first_name else "کاربر"
+        if target_user_info.user.last_name:
+            target_user_name += f" {target_user_info.user.last_name}"
+        if target_user_info.user.username:
+            target_user_name += f" (@{target_user_info.user.username})"
+
+        # Ensure target_user exists in our DB if we're going to modify it (like warnings)
+        target_user_db = get_or_create_user_db(
             session,
             target_user_id,
-            update.message.reply_to_message.from_user.username,
-            update.message.reply_to_message.from_user.first_name,
-            update.message.reply_to_message.from_user.last_name
+            target_user_info.user.username,
+            target_user_info.user.first_name,
+            target_user_info.user.last_name
         )
+
         chat_id = update.effective_chat.id
-        command = update.message.text.strip()
+        command = update.message.text.strip() # Strip whitespace for exact match
         settings = get_chat_settings_db(session, chat_id) # Get chat specific settings
 
         # Pin Message
@@ -463,34 +512,47 @@ async def admin_actions_on_reply(update: Update, context: ContextTypes.DEFAULT_T
         # Ban User
         elif command == "بن":
             try:
-                await context.bot.ban_chat_member(chat_id=chat_id, user_id=target_user.id)
-                await update.message.reply_text(f"{target_user.first_name} از گروه بن شد.", parse_mode='HTML')
+                await context.bot.ban_chat_member(chat_id=chat_id, user_id=target_user_id)
+                await update.message.reply_text(f"{target_user_name} از گروه بن شد.", parse_mode='HTML')
             except Exception as e:
                 logger.error(f"Error banning user: {e}")
                 await update.message.reply_text("متاسفانه نتوانستم کاربر را بن کنم. (شاید ربات مجوز ندارد یا کاربر ادمین است)")
 
+        # Unban User
+        elif command == "رفع بن":
+            try:
+                # Ensure the user is actually banned before trying to unban
+                chat_member_status = await context.bot.get_chat_member(chat_id, target_user_id)
+                if chat_member_status.status == ChatMember.BANNED:
+                    await context.bot.unban_chat_member(chat_id=chat_id, user_id=target_user_id)
+                    await update.message.reply_text(f"{target_user_name} از بن خارج شد.", parse_mode='HTML')
+                else:
+                    await update.message.reply_text(f"{target_user_name} در حال حاضر بن نیست.")
+            except Exception as e:
+                logger.error(f"Error unbanning user: {e}")
+                await update.message.reply_text("متاسفانه نتوانستم کاربر را رفع بن کنم. (شاید ربات مجوز ندارد یا آیدی نامعتبر است)")
 
         # Warning System
         elif command == "اخطار":
-            target_user.warnings += 1
+            target_user_db.warnings += 1
             session.commit() # Save changes to DB
-            current_warnings = target_user.warnings
+            current_warnings = target_user_db.warnings
             
             if current_warnings >= settings.warning_limit: # Use limit from DB
                 try:
-                    await context.bot.ban_chat_member(chat_id=chat_id, user_id=target_user.id)
+                    await context.bot.ban_chat_member(chat_id=chat_id, user_id=target_user_id)
                     await update.message.reply_text(
-                        f"{target_user.first_name} به دلیل رسیدن به {settings.warning_limit} اخطار از گروه بن شد.",
+                        f"{target_user_name} به دلیل رسیدن به {settings.warning_limit} اخطار از گروه بن شد.",
                         parse_mode='HTML'
                     )
-                    target_user.warnings = 0 # Reset warnings after ban
+                    target_user_db.warnings = 0 # Reset warnings after ban
                     session.commit()
                 except Exception as e:
                     logger.error(f"Error banning user after warnings: {e}")
                     await update.message.reply_text("متاسفانه نتوانستم کاربر را بن کنم. (شاید ربات مجوز ندارد یا کاربر ادمین است)")
             else:
                 await update.message.reply_text(
-                    f"{target_user.first_name} اخطار گرفت. تعداد اخطارهای فعلی: {current_warnings}/{settings.warning_limit}",
+                    f"{target_user_name} اخطار گرفت. تعداد اخطارهای فعلی: {current_warnings}/{settings.warning_limit}",
                     parse_mode='HTML'
                 )
         
@@ -528,12 +590,12 @@ async def admin_actions_on_reply(update: Update, context: ContextTypes.DEFAULT_T
                 
                 await context.bot.restrict_chat_member(
                     chat_id=chat_id,
-                    user_id=target_user.id,
-                    permissions=ChatMember.ALL_PERMISSIONS.with_can_send_messages(False),
+                    user_id=target_user_id,
+                    permissions=ChatMember.ALL_PERMISSIONS.with_can_send_messages(False), # Restrict sending messages
                     until_date=until_date
                 )
                 await update.message.reply_text(
-                    f"{target_user.first_name} به مدت {mute_duration_minutes} دقیقه سکوت شد.",
+                    f"{target_user_name} به مدت {mute_duration_minutes} دقیقه سکوت شد.",
                     parse_mode='HTML'
                 )
             except (ValueError, IndexError):
@@ -541,6 +603,36 @@ async def admin_actions_on_reply(update: Update, context: ContextTypes.DEFAULT_T
             except Exception as e:
                 logger.error(f"Error muting user: {e}")
                 await update.message.reply_text("متاسفانه نتوانستم کاربر را سکوت کنم. (شاید ربات مجوز ندارد یا کاربر ادمین است)")
+
+        # Promote User to Admin
+        elif command == "ادمین":
+            try:
+                # Bot needs to be admin with 'Add New Admins' permission
+                # If target user is already admin, Telegram raises BadRequest
+                chat_member = await context.bot.get_chat_member(chat_id=chat_id, user_id=target_user_id)
+                if chat_member.status in ["creator", "administrator"]:
+                    await update.message.reply_text(f"{target_user_name} در حال حاضر ادمین است.")
+                    return
+
+                await context.bot.promote_chat_member(
+                    chat_id=chat_id,
+                    user_id=target_user_id,
+                    can_change_info=True,
+                    can_delete_messages=True,
+                    can_invite_users=True,
+                    can_restrict_members=True,
+                    can_pin_messages=True,
+                    can_promote_members=False, # Bot shouldn't give permission to promote members to new admins
+                    can_manage_chat=True,
+                    can_manage_video_chats=True,
+                    can_post_messages=True,
+                    can_edit_messages=True,
+                    is_anonymous=False # Should not be anonymous by default
+                )
+                await update.message.reply_text(f"{target_user_name} به عنوان ادمین گروه اضافه شد.", parse_mode='HTML')
+            except Exception as e:
+                logger.error(f"Error promoting user to admin: {e}")
+                await update.message.reply_text("متاسفانه نتوانستم کاربر را ادمین کنم. (شاید ربات مجوز 'افزودن مدیران جدید' را ندارد یا کاربر ادمین است)")
 
         # Set Welcome Message Text (Admin only)
         elif command == "تنظیم خوشامد متن":
@@ -580,40 +672,51 @@ async def owner_actions_on_reply(update: Update, context: ContextTypes.DEFAULT_T
     """Handles group owner actions triggered by replying to a message."""
     session = Session()
     try:
-        if not update.message.reply_to_message:
-            return # Not a reply
+        if not update.message.reply_to_message or not update.message.text:
+            return # Not a reply or no text in the message
 
-        is_owner = await is_group_owner(update, context)
-        bot_owner_id_db = get_bot_owner_id_db(session)
-        
         # Check if the user is the group creator OR the designated bot owner
-        if not is_owner and update.effective_user.id != bot_owner_id_db:
-            return # Only group owner or bot owner can use these commands
+        is_owner_or_bot_owner = await is_group_owner(update, context) or \
+                                update.effective_user.id == get_bot_owner_id_db(session)
+        
+        if not is_owner_or_bot_owner:
+            return # Only group owner or bot owner can use these commands (is_group_owner sends a message)
 
         target_user_id = update.message.reply_to_message.from_user.id
-        target_user = get_or_create_user_db(
+        target_user_info = await context.bot.get_chat_member(chat_id=update.effective_chat.id, user_id=target_user_id)
+        target_user_name = target_user_info.user.first_name if target_user_info.user.first_name else "کاربر"
+        if target_user_info.user.last_name:
+            target_user_name += f" {target_user_info.user.last_name}"
+        if target_user_info.user.username:
+            target_user_name += f" (@{target_user_info.user.username})"
+
+        # Ensure target_user exists in our DB if we're going to modify it
+        target_user_db = get_or_create_user_db(
             session,
             target_user_id,
-            update.message.reply_to_message.from_user.username,
-            update.message.reply_to_message.from_user.first_name,
-            update.message.reply_to_message.from_user.last_name
+            target_user_info.user.username,
+            target_user_info.user.first_name,
+            target_user_info.user.last_name
         )
-        command = update.message.text.strip()
+
+        command = update.message.text.strip() # Strip whitespace for exact match
 
         # Special User
         if command == "کاربر ویژه":
-            target_user.is_special = True
+            target_user_db.is_special = True
             session.commit()
-            await update.message.reply_text(f"{target_user.first_name} به عنوان کاربر ویژه اضافه شد. او اکنون می‌تواند لینک ارسال کند.", parse_mode='HTML')
+            await update.message.reply_text(f"{target_user_name} به عنوان کاربر ویژه اضافه شد. او اکنون می‌تواند لینک ارسال کند.", parse_mode='HTML')
         
         # Bot Owner (Only group creator can set bot owner initially)
         elif command == "مالک ربات":
-            if not await is_group_owner(update, context): # Double check only group creator can set this
-                await update.message.reply_text("این دستور فقط توسط سازنده گروه قابل استفاده است.")
+            # Extra check to ensure only the actual group creator can assign bot owner
+            # to prevent a non-creator bot owner from changing the bot owner
+            if not await is_group_owner(update, context): 
+                await update.message.reply_text("این دستور فقط توسط سازنده گروه قابل استفاده است تا مالک ربات را تعیین کند.")
                 return
 
-            set_bot_owner_id_db(session, target_user.id)
-            await update.message.reply_text(f"{target_user.first_name} به عنوان مالک ربات تعیین شد. او اکنون قابلیت‌های مالک گروه را دارد.", parse_mode='HTML')
+            set_bot_owner_id_db(session, target_user_id)
+            await update.message.reply_text(f"{target_user_name} به عنوان مالک ربات تعیین شد. او اکنون قابلیت‌های مالک گروه را دارد.", parse_mode='HTML')
     except Exception as e:
         session.rollback()
         logger.error(f"Error in owner_actions_on_reply: {e}")
@@ -624,6 +727,10 @@ async def owner_actions_on_reply(update: Update, context: ContextTypes.DEFAULT_T
 
 async def update_user_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Updates user chat statistics."""
+    # Ensure there's a message and it's from a user (not a channel, etc.)
+    if not update.effective_user or not update.message:
+        return
+
     session = Session()
     try:
         user_id = update.effective_user.id
@@ -640,23 +747,23 @@ async def update_user_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         now = datetime.now()
         last_time = user.last_message_time if user.last_message_time else datetime.min
 
-        # Reset daily if new day
+        # Reset daily if new day (or new month/year, covers all)
         if now.day != last_time.day or now.month != last_time.month or now.year != last_time.year:
             user.daily_messages = 0
         user.daily_messages += 1
 
-        # Reset hourly if new hour
+        # Reset hourly if new hour (or new day, covers all)
         if now.hour != last_time.hour or now.day != last_time.day:
             user.hourly_messages = 0
         user.hourly_messages += 1
 
-        # Reset weekly
-        # This uses ISO week number, which resets at the start of a new ISO year (usually Monday of the first full week)
+        # Reset weekly (using ISO week number, which resets at the start of a new ISO year)
+        # Check for change in week number OR year
         if now.isocalendar()[1] != last_time.isocalendar()[1] or now.year != last_time.year:
             user.weekly_messages = 0
         user.weekly_messages += 1
 
-        # Reset monthly if new month
+        # Reset monthly if new month (or new year, covers all)
         if now.month != last_time.month or now.year != last_time.year:
             user.monthly_messages = 0
         user.monthly_messages += 1
@@ -739,52 +846,67 @@ def main() -> None:
             # Message Handler for group link management
             application.add_handler(MessageHandler(filters.TEXT & filters.ChatType.GROUPS & filters.Regex(r'https?://[^\s]+'), manage_group_links))
 
-            # Message Handler for reply translation
-            application.add_handler(MessageHandler(filters.TEXT & filters.REPLY, reply_translate))
+            # Message Handler for reply translation (exact match for "ترجمه")
+            application.add_handler(MessageHandler(filters.TEXT & filters.REPLY & filters.Regex(r'^\s*ترجمه\s*$'), reply_translate))
 
             # Message Handler for new members (welcome message)
             application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, greet_new_members))
 
             # Message Handler for all text messages to update stats
+            # IMPORTANT: This should be before other TEXT handlers if you want stats for all messages
+            # But after specific TEXT & REPLY handlers if you only want stats for non-command messages.
+            # Here, it's fine as is, because it explicitly excludes COMMANDs.
             application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, update_user_stats))
 
-            # Message Handler for admin/owner actions (order matters for reply handlers)
-            application.add_handler(MessageHandler(filters.TEXT & filters.REPLY & filters.ChatType.GROUPS, admin_actions_on_reply))
-            application.add_handler(MessageHandler(filters.TEXT & filters.REPLY & filters.ChatType.GROUPS, owner_actions_on_reply))
+            # Message Handlers for admin/owner actions using regex for exact match or starts-with
+            # Admin commands
+            application.add_handler(MessageHandler(
+                filters.TEXT & filters.REPLY & filters.ChatType.GROUPS &
+                (
+                    filters.Regex(r'^\s*پین\s*$') |
+                    filters.Regex(r'^\s*بن\s*$') |
+                    filters.Regex(r'^\s*رفع بن\s*$') | # New filter for unban
+                    filters.Regex(r'^\s*اخطار\s*$') |
+                    filters.Regex(r'^\s*سکوت\s+.*$') | 
+                    filters.Regex(r'^\s*تنظیم اخطار\s+.*$') | 
+                    filters.Regex(r'^\s*ادمین\s*$') | # New filter for admin
+                    filters.Regex(r'^\s*تنظیم خوشامد متن\s*$') |
+                    filters.Regex(r'^\s*تنظیم خوشامد رسانه\s*$')
+                ),
+                admin_actions_on_reply
+            ))
+            # Owner commands
+            application.add_handler(MessageHandler(
+                filters.TEXT & filters.REPLY & filters.ChatType.GROUPS &
+                (
+                    filters.Regex(r'^\s*کاربر ویژه\s*$') |
+                    filters.Regex(r'^\s*مالک ربات\s*$')
+                ),
+                owner_actions_on_reply
+            ))
 
             logger.info("DigitalBot started successfully. Listening for updates...")
             # Run the bot using polling. If an error occurs here, it will go to the except block.
-            # No close_loop=False is needed here because it's running in the main thread.
             application.run_polling(allowed_updates=Update.ALL_TYPES) 
 
         except Exception as e:
             logger.error(f"An error occurred: {e}. Restarting bot in 5 seconds...", exc_info=True)
-            # In case of an error, wait 5 seconds before attempting to restart the bot.
             time.sleep(5)
         finally:
-            # Any necessary cleanup before restart would go here.
             pass
 
 # This is the main entry point of the program, running both the Telegram bot and Flask server.
 if __name__ == "__main__":
     # Function to run the Flask server
-    # This will be run in a separate thread to bind the port.
     def run_flask_app():
-        # Get the port from the environment variable (defaulting to 10000 for Render)
         port = int(os.environ.get("PORT", 10000)) 
         app.run(host='0.0.0.0', port=port)
 
     # Start Flask in a separate thread.
-    # Flask does not rely on asyncio, so it can run in its own thread without issues.
     flask_thread = Thread(target=run_flask_app)
     flask_thread.start()
 
     # Run the Telegram bot directly in the main thread.
-    # The main() function already contains the infinite loop and run_polling,
-    # which manages its own asyncio event loop correctly in the main thread.
     main()
 
-    # These join calls will technically never be reached because main() is an infinite loop,
-    # but they are here for structural completeness.
     flask_thread.join()
-            
