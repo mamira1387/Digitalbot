@@ -388,9 +388,9 @@ async def greet_new_members(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                     )
             else:
                 await update.message.reply_html(
-                    f"خوش آمدید {member.mention_html()} به گروه **{group_name}**!",
-                    parse_mode='HTML'
-                )
+    f"خوش آمدید {member.mention_html()} به گروه **{group_name}**!"
+)
+
     finally:
         session.close()
 
