@@ -1,32 +1,31 @@
 import logging
 import os
 import re
-import time # این خط رو اضافه کن
+import time
 from datetime import datetime, timedelta
 from telegram import Update, ForceReply, ChatMember
 from telegram.ext import (
-    Application, CommandHandler, MessageHandler, filters, ContextTypes,
-    ChatMemberHandler
+    Application, CommandHandler, MessageHandler, filters, ContextTypes
 )
-from googletrans import Translator # این رو چک کن که از googletrans اصلی استفاده کنی
+# Make sure you are using googletrans==4.0.0-rc1 in your requirements.txt
+from googletrans import Translator 
 import yt_dlp
-from flask import Flask, request # این خط رو اضافه کن
-from threading import Thread # این خط رو اضافه کن
+from flask import Flask, request # Make sure 'Flask' is in your requirements.txt
+from threading import Thread # Required for running Flask in a separate thread
 
 # --- Database Setup ---
 from sqlalchemy import create_engine, Column, Integer, String, BigInteger, DateTime, Text, Boolean
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-# ایجاد موتور پایگاه داده SQLite. فایل 'digitalbot.db' ساخته میشه
+# Create a SQLite database engine. 'digitalbot.db' file will be created.
 engine = create_engine('sqlite:///digitalbot.db')
-Base = declarative_base() # کلاس پایه برای مدل‌های ما
-Session = sessionmaker(bind=engine) # سازنده Session
+Base = declarative_base() # Base class for our models
+Session = sessionmaker(bind=engine) # Session factory
 
-
-# تعریف مدل‌ها (جداول پایگاه داده)
+# Define models (database tables)
 class User(Base):
     __tablename__ = 'users'
-    id = Column(BigInteger, primary_key=True) # User ID از تلگرام
+    id = Column(BigInteger, primary_key=True) # Telegram User ID
     username = Column(String, nullable=True)
     first_name = Column(String, nullable=False)
     last_name = Column(String, nullable=True)
@@ -39,7 +38,7 @@ class User(Base):
     last_message_time = Column(DateTime, default=datetime.min)
     
     warnings = Column(Integer, default=0)
-    is_special = Column(Boolean, default=False) # کاربر ویژه
+    is_special = Column(Boolean, default=False) # Special user
     
     def __repr__(self):
         return f"<User(id={self.id}, username='{self.username}', total_messages={self.total_messages})>"
@@ -57,13 +56,12 @@ class ChatSettings(Base):
 
 class BotOwner(Base):
     __tablename__ = 'bot_owner'
-    user_id = Column(BigInteger, primary_key=True) # ID کاربر مالک ربات
+    user_id = Column(BigInteger, primary_key=True) # Bot owner's User ID
     
     def __repr__(self):
         return f"<BotOwner(user_id={self.user_id})>"
 
-
-# ایجاد تمامی جداول در پایگاه داده (اگر وجود نداشته باشند)
+# Create all tables in the database (if they don't exist)
 Base.metadata.create_all(engine)
 
 # --- Logging Setup ---
@@ -77,13 +75,13 @@ logger = logging.getLogger(__name__)
 TOKEN = os.environ.get("TOKEN", "YOUR_BOT_TOKEN_HERE")
 
 # --- Flask App for Render Health Check ---
-# این بخش جدید برای حل مشکل Port scan timeout است
-# Render به یک وب سرور نیاز داره تا بگه سرویس فعاله
+# This new section solves the 'Port scan timeout' issue.
+# Render needs a web server to confirm the service is alive.
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Bot is running!", 200 # پیامی برای Render که سرویس زنده‌ست
+    return "Bot is running!", 200 # Message for Render that the service is alive
 
 # --- Helper Functions for Database Interaction ---
 
@@ -232,9 +230,9 @@ async def translate_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def _perform_download(update: Update, context: ContextTypes.DEFAULT_TYPE, url: str) -> None:
     """Helper function to perform the actual download using yt-dlp."""
-    instagram_cookies = os.environ.get("INSTAGRAM_COOKIES") # گرفتن کوکی‌ها از متغیر محیطی Render
+    instagram_cookies = os.environ.get("INSTAGRAM_COOKIES") # Get cookies from environment variable
         
-    # مسیر فایل موقت برای کوکی‌ها
+    # Path for temporary cookies file
     cookies_file_path = 'cookies.txt' 
 
     try:
@@ -242,24 +240,24 @@ async def _perform_download(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             'format': 'best',
             'outtmpl': 'downloads/%(title)s.%(ext)s',
             'noplaylist': True,
-            'max_filesize': 50 * 1024 * 1024, # محدودیت ۵۰ مگابایت برای آپلود راحت در تلگرام
+            'max_filesize': 50 * 1024 * 1024, # 50 MB limit for easy upload to Telegram
             'nocheckcertificate': True,
             'retries': 3,
             'no_warnings': True,
             'quiet': True,
-            # اضافه کردن کوکی‌ها در صورت وجود
-            'cookiefile': cookies_file_path, # yt-dlp کوکی‌ها رو از این فایل میخونه
+            # Add cookies if available
+            'cookiefile': cookies_file_path, # yt-dlp reads cookies from this file
         }
         
-        # اگر کوکی‌ها از متغیر محیطی دریافت شدند، در یک فایل موقت ذخیره کن
+        # If cookies are received from environment variable, save them to a temporary file
         if instagram_cookies:
             with open(cookies_file_path, 'w') as f:
                 f.write(instagram_cookies)
-            logger.info("کوکی‌های اینستاگرام از متغیر محیطی بارگذاری شدند.")
+            logger.info("Instagram cookies loaded from environment variable.")
         else:
-            logger.warning("متغیر محیطی INSTAGRAM_COOKIES تنظیم نشده است. دانلودهای اینستاگرام ممکن است با خطا مواجه شوند.")
+            logger.warning("INSTAGRAM_COOKIES environment variable not set. Instagram downloads might fail.")
 
-        os.makedirs('downloads', exist_ok=True) # اطمینان از وجود دایرکتوری downloads
+        os.makedirs('downloads', exist_ok=True) # Ensure 'downloads' directory exists
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
@@ -275,20 +273,20 @@ async def _perform_download(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             else:
                 await update.message.reply_document(document=open(filename, 'rb'), caption="فایل شما آماده است!")
             
-            os.remove(filename)  # پاک کردن فایل بعد از ارسال
-            if not os.listdir('downloads'): # حذف دایرکتوری اگر خالی شد
+            os.remove(filename)  # Delete file after sending
+            if not os.listdir('downloads'): # Remove directory if empty
                 os.rmdir('downloads')
         else:
             await update.message.reply_text("متاسفانه در دانلود محتوا مشکلی پیش آمد.")
 
     except yt_dlp.DownloadError as e:
-        logger.error(f"خطا در دانلود با yt-dlp برای {url}: {e}")
+        logger.error(f"Download error with yt-dlp for {url}: {e}")
         await update.message.reply_text(f"متاسفانه در دانلود محتوا مشکلی پیش آمد. دلیل احتمالی: {e.msg}")
     except Exception as e:
-        logger.error(f"خطای عمومی در دانلود برای {url}: {e}")
+        logger.error(f"General download error for {url}: {e}")
         await update.message.reply_text("یک خطای ناشناخته در هنگام دانلود رخ داد. لطفاً مطمئن شوید لینک معتبر است.")
     finally:
-        # پاک کردن فایل موقت کوکی‌ها پس از اتمام کار (مهم برای امنیت و پاکسازی)
+        # Clean up the temporary cookies file after completion (important for security and cleanup)
         if os.path.exists(cookies_file_path):
             os.remove(cookies_file_path)
 
@@ -425,12 +423,12 @@ async def greet_new_members(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                 )
     finally:
         session.close()
-                # --- Admin Capabilities ---
+# --- Admin Capabilities ---
 
 async def admin_actions_on_reply(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles admin actions triggered by replying to a message."""
     session = Session()
-    try: # <--- This try block starts here
+    try:
         if not update.message.reply_to_message:
             return # Not a reply
 
@@ -570,10 +568,10 @@ async def admin_actions_on_reply(update: Update, context: ContextTypes.DEFAULT_T
                     await update.message.reply_text("لطفاً روی یک تصویر یا ویدیو ریپلای کنید و 'تنظیم خوشامد رسانه' را بنویسید.")
             else:
                 await update.message.reply_text("لطفاً روی یک تصویر یا ویدیو ریپلای کنید و 'تنظیم خوشامد رسانه' را بنویسید.")
-    except Exception as e: # <--- This except block catches errors from the main try block
-        session.rollback() # Rollback in case of error
+    except Exception as e:
+        session.rollback()
         logger.error(f"Error in admin_actions_on_reply: {e}")
-    finally: # <--- This finally block ensures session is closed
+    finally:
         session.close()
 
 # --- Group Owner Capabilities ---
@@ -724,7 +722,7 @@ async def show_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 def main() -> None:
     """Start the bot and run it continuously with error handling."""
-    # این حلقه باعث میشه ربات در صورت خطا یا قطعی، خودش رو ری‌استارت کنه
+    # This loop ensures the bot restarts if an error or disconnection occurs.
     while True:
         try:
             logger.info("Initializing DigitalBot...")
@@ -750,43 +748,43 @@ def main() -> None:
             # Message Handler for all text messages to update stats
             application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, update_user_stats))
 
-            # Message Handler for admin/owner actions (must be after other reply handlers if there are overlaps)
+            # Message Handler for admin/owner actions (order matters for reply handlers)
             application.add_handler(MessageHandler(filters.TEXT & filters.REPLY & filters.ChatType.GROUPS, admin_actions_on_reply))
             application.add_handler(MessageHandler(filters.TEXT & filters.REPLY & filters.ChatType.GROUPS, owner_actions_on_reply))
 
             logger.info("DigitalBot started successfully. Listening for updates...")
-            # Run the bot using polling. اگر اینجا خطایی رخ دهد، به بخش except میرود.
-            # close_loop=False برای اینکه run_polling بلاک نکنه اجرای Flask رو و اجازه بده Flask در ترد خودش کار کنه.
-            application.run_polling(allowed_updates=Update.ALL_TYPES, close_loop=False) 
+            # Run the bot using polling. If an error occurs here, it will go to the except block.
+            # No close_loop=False is needed here because it's running in the main thread.
+            application.run_polling(allowed_updates=Update.ALL_TYPES) 
 
         except Exception as e:
             logger.error(f"An error occurred: {e}. Restarting bot in 5 seconds...", exc_info=True)
-            # در صورت بروز خطا، 5 ثانیه صبر کرده و سپس تلاش برای راه‌اندازی مجدد ربات
+            # In case of an error, wait 5 seconds before attempting to restart the bot.
             time.sleep(5)
         finally:
-            # در اینجا اگر نیاز به پاکسازی خاصی قبل از ری‌استارت باشد، قرار میگیرد.
-            # برای این ربات خاص، نیازی نیست.
+            # Any necessary cleanup before restart would go here.
             pass
 
-# این بخش اصلی برنامه است که هم ربات تلگرام و هم سرور Flask را اجرا می‌کند
+# This is the main entry point of the program, running both the Telegram bot and Flask server.
 if __name__ == "__main__":
-    # تابع برای اجرای ربات تلگرام
-    def run_telegram_bot():
-        main()
-
-    # تابع برای اجرای سرور Flask
+    # Function to run the Flask server
+    # This will be run in a separate thread to bind the port.
     def run_flask_app():
-        port = int(os.environ.get("PORT", 10000)) # پورت رو از Environment Variable میگیره (پیش‌فرض 10000)
+        # Get the port from the environment variable (defaulting to 10000 for Render)
+        port = int(os.environ.get("PORT", 10000)) 
         app.run(host='0.0.0.0', port=port)
 
-    # هر دو رو در ترد‌های جداگانه اجرا کن
-    telegram_thread = Thread(target=run_telegram_bot)
+    # Start Flask in a separate thread.
+    # Flask does not rely on asyncio, so it can run in its own thread without issues.
     flask_thread = Thread(target=run_flask_app)
-
-    telegram_thread.start()
     flask_thread.start()
 
-    # این خط باعث میشه برنامه تا زمانی که تردها فعال هستند، بسته نشه
-    telegram_thread.join()
-    flask_thread.join()
+    # Run the Telegram bot directly in the main thread.
+    # The main() function already contains the infinite loop and run_polling,
+    # which manages its own asyncio event loop correctly in the main thread.
+    main()
 
+    # These join calls will technically never be reached because main() is an infinite loop,
+    # but they are here for structural completeness.
+    flask_thread.join()
+            
